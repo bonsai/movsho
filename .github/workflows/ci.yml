@@ -1,0 +1,229 @@
+name: CI/CD Pipeline - Build, Install & Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test Extension
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [18.x, 20.x]
+        vscode-version: ['1.85.0', 'stable']
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run linting
+      run: npm run lint
+
+    - name: Compile TypeScript
+      run: npm run compile
+
+    - name: Run tests
+      uses: coactions/setup-xvfb@v1
+      with:
+        run: npm test
+      env:
+        VSCODE_VERSION: ${{ matrix.vscode-version }}
+
+  build:
+    name: Build and Package
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Compile TypeScript
+      run: npm run compile
+
+    - name: Package Extension
+      run: npm run package
+
+    - name: Upload VSIX artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: vscode-extension-${{ github.sha }}
+        path: '*.vsix'
+        retention-days: 30
+
+  install-test:
+    name: Install and Test Extension
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+        
+    - name: Download VSIX artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: vscode-extension-${{ github.sha }}
+        
+    - name: Install VS Code (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg
+        sudo install -o root -g root -m 644 packages.microsoft.gpg /etc/apt/trusted.gpg.d/
+        sudo sh -c 'echo "deb [arch=amd64,arm64,armhf signed-by=/etc/apt/trusted.gpg.d/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list'
+        sudo apt update
+        sudo apt install code
+        
+    - name: Install VS Code (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install vscode -y
+        refreshenv
+        
+    - name: Install VS Code (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install --cask visual-studio-code
+        
+    - name: Install extension from VSIX
+      shell: bash
+      run: |
+        VSIX_FILE=$(ls *.vsix | head -n 1)
+        echo "Installing extension: $VSIX_FILE"
+        code --install-extension "$VSIX_FILE" --force
+        
+    - name: List installed extensions
+      run: code --list-extensions
+      
+    - name: Verify extension installation
+      shell: bash
+      run: |
+        if code --list-extensions | grep -i "screenshot-auto-mover"; then
+          echo "✅ Extension successfully installed"
+        else
+          echo "❌ Extension installation failed"
+          echo "Installed extensions:"
+          code --list-extensions
+          exit 1
+        fi
+
+  quality-checks:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Check TypeScript types
+      run: npx tsc --noEmit
+      
+    - name: Run security audit
+      run: npm audit --audit-level=moderate
+      
+    - name: Check for outdated dependencies
+      run: npm outdated || true
+      
+    - name: Validate package.json
+      run: |
+        if [ -f package.json ]; then
+          echo "✅ package.json exists"
+          node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))" && echo "✅ package.json is valid JSON"
+        else
+          echo "❌ package.json not found"
+          exit 1
+        fi
+
+  release:
+    name: Release
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test, build, install-test, quality-checks]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Download VSIX artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: vscode-extension-${{ github.sha }}
+
+    - name: Get package version
+      id: package-version
+      run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      if: contains(github.event.head_commit.message, '[release]')
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.package-version.outputs.version }}
+        name: Release v${{ steps.package-version.outputs.version }}
+        files: '*.vsix'
+        generate_release_notes: true
+        body: |
+          ## Changes
+          ${{ github.event.head_commit.message }}
+          
+          ## Installation
+          1. Download the `.vsix` file from the assets below
+          2. Open VS Code
+          3. Run `Extensions: Install from VSIX...` command
+          4. Select the downloaded file
+          
+          ## Features
+          - Automatic screenshot file monitoring and moving
+          - GUI folder selection
+          - Configurable file extensions
+          - Real-time status bar updates
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

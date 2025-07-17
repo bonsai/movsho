@@ -1,0 +1,120 @@
+{
+  "name": "screenshot-auto-mover",
+  "displayName": "Screenshot Auto Mover",
+  "description": "Automatically move screenshot files from source to destination folder with GUI folder selection",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "screenshotAutoMover.selectSourceFolder",
+        "title": "Select Source Folder",
+        "category": "Screenshot Auto Mover"
+      },
+      {
+        "command": "screenshotAutoMover.selectDestinationFolder",
+        "title": "Select Destination Folder",
+        "category": "Screenshot Auto Mover"
+      },
+      {
+        "command": "screenshotAutoMover.startWatching",
+        "title": "Start Watching",
+        "category": "Screenshot Auto Mover"
+      },
+      {
+        "command": "screenshotAutoMover.stopWatching",
+        "title": "Stop Watching",
+        "category": "Screenshot Auto Mover"
+      },
+      {
+        "command": "screenshotAutoMover.showStatus",
+        "title": "Show Status",
+        "category": "Screenshot Auto Mover"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "screenshotAutoMover.selectSourceFolder"
+        },
+        {
+          "command": "screenshotAutoMover.selectDestinationFolder"
+        },
+        {
+          "command": "screenshotAutoMover.startWatching"
+        },
+        {
+          "command": "screenshotAutoMover.stopWatching"
+        },
+        {
+          "command": "screenshotAutoMover.showStatus"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Screenshot Auto Mover",
+      "properties": {
+        "screenshotAutoMover.sourceFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Source folder to watch for screenshots"
+        },
+        "screenshotAutoMover.destinationFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Destination folder to move screenshots"
+        },
+        "screenshotAutoMover.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start watching when VS Code starts"
+        },
+        "screenshotAutoMover.fileExtensions": {
+          "type": "array",
+          "default": [".png", ".jpg", ".jpeg"],
+          "description": "File extensions to watch for"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package",
+    "install-local": "code --install-extension screenshot-auto-mover-*.vsix",
+    "install-test": "npm run install-local && code --list-extensions | grep screenshot-auto-mover",
+    "build-and-install": "npm run compile && npm run package && npm run install-local",
+    "ci": "npm run lint && npm run test && npm run compile && npm run package",
+    "dev": "npm run watch",
+    "clean": "rimraf out *.vsix",
+    "setup": "npm install && npm run compile",
+    "deploy": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "18.x",
+    "@types/mocha": "^10.0.6",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.54.0",
+    "mocha": "^10.2.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3"
+  }
+}
